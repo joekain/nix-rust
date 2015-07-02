@@ -27,56 +27,106 @@ pub enum WaitStatus {
     StillAlive
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux",
+          target_os = "android"))]
 mod status {
-    use libc::pid_t;
-    use super::WaitStatus;
     use sys::signal;
 
-    fn exited(status: i32) -> bool {
+    pub fn exited(status: i32) -> bool {
         (status & 0x7F) == 0
     }
 
-    fn exit_status(status: i32) -> i8 {
+    pub fn exit_status(status: i32) -> i8 {
         ((status & 0xFF00) >> 8) as i8
     }
 
-    fn signaled(status: i32) -> bool {
+    pub fn signaled(status: i32) -> bool {
         ((((status & 0x7f) + 1) as i8) >> 1) > 0
     }
 
-    fn term_signal(status: i32) -> signal::SigNum {
+    pub fn term_signal(status: i32) -> signal::SigNum {
         (status & 0x7f) as signal::SigNum
     }
 
-    fn dumped_core(status: i32) -> bool {
+    pub fn dumped_core(status: i32) -> bool {
         (status & 0x80) != 0
     }
 
-    fn stopped(status: i32) -> bool {
+    pub fn stopped(status: i32) -> bool {
         (status & 0xff) == 0x7f
     }
 
-    fn stop_signal(status: i32) -> signal::SigNum {
+    pub fn stop_signal(status: i32) -> signal::SigNum {
         ((status & 0xFF00) >> 8) as signal::SigNum
     }
 
-    fn continued(status: i32) -> bool {
+    pub fn continued(status: i32) -> bool {
         status == 0xFFFF
     }
+}
 
-    pub fn decode(pid : pid_t, status: i32) -> WaitStatus {
-        if exited(status) {
-            WaitStatus::Exited(pid, exit_status(status))
-        } else if signaled(status) {
-            WaitStatus::Signaled(pid, term_signal(status), dumped_core(status))
-        } else if stopped(status) {
-            WaitStatus::Stopped(pid, stop_signal(status))
-        } else {
-            println!("status is {}", status);
-            assert!(continued(status));
-            WaitStatus::Continued(pid)
-        }
+#[cfg(any(target_os = "macos",
+          target_os = "ios"))]
+mod status {
+    use sys::signal;
+
+    const WSTOPPED: i32 = 0x7f;
+
+    pub fn wstatus(status: i32) -> i32 {
+        status & 0x7F
+    }
+
+    pub fn exited(status: i32) -> bool {
+        wstatus(status) == 0
+    }
+
+    pub fn exit_status(status: i32) -> i8 {
+        ((status >> 8) & 0xFF) as i8
+    }
+
+    pub fn signaled(status: i32) -> bool {
+        wstatus(status) != WSTOPPED && wstatus(status) != 0
+    }
+
+    pub fn term_signal(status: i32) -> signal::SigNum {
+        wstatus(status) as signal::SigNum
+    }
+
+    pub fn dumped_core(status: i32) -> bool {
+        (status & 0x80) != 0
+    }
+
+    pub fn stopped(status: i32) -> bool {
+        wstatus(status) == WSTOPPED && (status >> 8) != 0x13
+    }
+
+    pub fn stop_signal(status: i32) -> signal::SigNum {
+        (status >> 8) as signal::SigNum
+    }
+
+    pub fn continued(status: i32) -> bool {
+        wstatus(status) == WSTOPPED && (status >> 8) == 0x13
+    }
+}
+
+#[cfg(any(target_os = "freebsd",
+          target_os = "openbsd",
+          target_os = "dragonfly"))]
+mod status {
+    use sys::signal;
+}
+
+pub fn decode(pid : pid_t, status: i32) -> WaitStatus {
+    if status::exited(status) {
+        WaitStatus::Exited(pid, status::exit_status(status))
+    } else if status::signaled(status) {
+        WaitStatus::Signaled(pid, status::term_signal(status), status::dumped_core(status))
+    } else if status::stopped(status) {
+        WaitStatus::Stopped(pid, status::stop_signal(status))
+    } else {
+        println!("status is {}", status);
+        assert!(status::continued(status));
+        WaitStatus::Continued(pid)
     }
 }
 
@@ -97,7 +147,7 @@ pub fn waitpid(pid: pid_t, options: Option<WaitPidFlag>) -> Result<WaitStatus> {
     } else if res == 0 {
         Ok(StillAlive)
     } else {
-        Ok(status::decode(res, status))
+        Ok(decode(res, status))
     }
 }
 
