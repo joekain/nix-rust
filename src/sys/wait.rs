@@ -27,6 +27,7 @@ pub enum WaitStatus {
     StillAlive
 }
 
+#[cfg(target_os = "linux")]
 mod status {
     use libc::pid_t;
     use super::WaitStatus;
