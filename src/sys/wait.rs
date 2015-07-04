@@ -114,9 +114,48 @@ mod status {
           target_os = "dragonfly"))]
 mod status {
     use sys::signal;
+
+    const WCOREFLAG: i32 = 0x80;
+    const WSTOPPED: i32 = 0x7f;
+
+    pub fn wstatus(status: i32) -> i32 {
+        status & 0x7F
+    }
+
+    pub fn stopped(status: i32) -> bool {
+        wstatus(status) == WSTOPPED
+    }
+
+    pub fn stop_signal(status: i32) -> signal::SigNum {
+        (status >> 8) as signal::SigNum
+    }
+
+    pub fn signaled(status: i32) -> bool {
+        wstatus(status) != WSTOPPED && wstatus(status) != 0 && status != 0x13
+    }
+
+    pub fn term_signal(status: i32) -> signal::SigNum {
+        wstatus(status) as signal::SigNum
+    }
+
+    pub fn exited(status: i32) -> bool {
+        wstatus(status) == 0
+    }
+
+    pub fn exit_status(status: i32) -> i8 {
+        (status >> 8) as i8
+    }
+
+    pub fn continued(status: i32) -> bool {
+        status == 0x13
+    }
+
+    pub fn dumped_core(status: i32) -> bool {
+        (status & WCOREFLAG) != 0
+    }
 }
 
-pub fn decode(pid : pid_t, status: i32) -> WaitStatus {
+fn decode(pid : pid_t, status: i32) -> WaitStatus {
     if status::exited(status) {
         WaitStatus::Exited(pid, status::exit_status(status))
     } else if status::signaled(status) {
@@ -124,7 +163,6 @@ pub fn decode(pid : pid_t, status: i32) -> WaitStatus {
     } else if status::stopped(status) {
         WaitStatus::Stopped(pid, status::stop_signal(status))
     } else {
-        println!("status is {}", status);
         assert!(status::continued(status));
         WaitStatus::Continued(pid)
     }
