@@ -70,18 +70,31 @@ mod status {
 mod status {
     use sys::signal;
 
+    const WCOREFLAG: i32 = 0x80;
     const WSTOPPED: i32 = 0x7f;
 
-    pub fn wstatus(status: i32) -> i32 {
+    fn wstatus(status: i32) -> i32 {
         status & 0x7F
-    }
-
-    pub fn exited(status: i32) -> bool {
-        wstatus(status) == 0
     }
 
     pub fn exit_status(status: i32) -> i8 {
         ((status >> 8) & 0xFF) as i8
+    }
+
+    pub fn stop_signal(status: i32) -> signal::SigNum {
+        (status >> 8) as signal::SigNum
+    }
+
+    pub fn continued(status: i32) -> bool {
+        wstatus(status) == WSTOPPED && stop_signal(status) == 0x13
+    }
+
+    pub fn stopped(status: i32) -> bool {
+        wstatus(status) == WSTOPPED && stop_signal(status) != 0x13
+    }
+
+    pub fn exited(status: i32) -> bool {
+        wstatus(status) == 0
     }
 
     pub fn signaled(status: i32) -> bool {
@@ -93,19 +106,7 @@ mod status {
     }
 
     pub fn dumped_core(status: i32) -> bool {
-        (status & 0x80) != 0
-    }
-
-    pub fn stopped(status: i32) -> bool {
-        wstatus(status) == WSTOPPED && (status >> 8) != 0x13
-    }
-
-    pub fn stop_signal(status: i32) -> signal::SigNum {
-        (status >> 8) as signal::SigNum
-    }
-
-    pub fn continued(status: i32) -> bool {
-        wstatus(status) == WSTOPPED && (status >> 8) == 0x13
+        (status & WCOREFLAG) != 0
     }
 }
 
@@ -118,7 +119,7 @@ mod status {
     const WCOREFLAG: i32 = 0x80;
     const WSTOPPED: i32 = 0x7f;
 
-    pub fn wstatus(status: i32) -> i32 {
+    fn wstatus(status: i32) -> i32 {
         status & 0x7F
     }
 
